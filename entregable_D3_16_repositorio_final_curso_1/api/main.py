@@ -1,3 +1,15 @@
+from prometheus_client import Counter, Histogram
+
+CHURN_PREDICTIONS = Counter(
+    "churn_predictions_total",
+    "Predicciones individuales completadas correctamente",
+)
+
+CHURN_LATENCY = Histogram(
+    "churn_prediction_latency_seconds",
+    "Tiempo de procesamiento de predicciones individuales en segundos",
+)
+
 from io import StringIO
 
 import pandas as pd
@@ -34,6 +46,7 @@ def health():
 
 
 @app.post("/predict", response_model=PredictionResponse)
+@CHURN_LATENCY.time()
 def predict(customer: CustomerInput):
     try:
         model = get_model()
@@ -49,7 +62,7 @@ def predict(customer: CustomerInput):
 
         row = result.iloc[0]
 
-        return PredictionResponse(
+        response = PredictionResponse(
             customer_id=(
                 str(row["customer_id"])
                 if "customer_id" in result.columns
@@ -58,6 +71,9 @@ def predict(customer: CustomerInput):
             churn_probability=float(row["churn_probability"]),
             churn_prediction=int(row["churn_prediction"]),
         )
+
+        CHURN_PREDICTIONS.inc()
+        return response
 
     except Exception as exc:
         raise HTTPException(
@@ -118,3 +134,20 @@ async def predict_batch(file: UploadFile = File(...)):
             status_code=400,
             detail=str(exc),
         ) from exc
+
+from time import perf_counter
+from fastapi.responses import Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )

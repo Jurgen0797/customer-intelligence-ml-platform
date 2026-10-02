@@ -17,3 +17,5 @@ uvicorn==0.52.4
 
 python-multipart==0.0.22
 
+
+prometheus-client>=0.20,<1.0
